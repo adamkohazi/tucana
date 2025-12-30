@@ -1,0 +1,15 @@
+#:kivy 2.3.1
+# tilemap.kv
+
+<Tilemap>:
+    size_hint: None, None
+    width: min(self.parent.width if self.parent else 0, self.parent.height if self.parent else 0)
+    height: self.width
+
+    canvas:
+        Color:
+            rgba: 0, 0, 0.5, 1
+
+        Rectangle:
+            pos: 0, 0
+            size: self.size
