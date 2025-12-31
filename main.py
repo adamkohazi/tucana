@@ -12,15 +12,22 @@ class MainApp(App):
 
         # Draw UI
         self.root = Builder.load_file("main.kv")
+        
+        # Update UI based on mouse movement
+        Window.bind(mouse_pos=self.update)
 
          # Draw initial elements
         Clock.schedule_once(self.initialize)
         return self.root
+    
+    def update(self, *args):
+        self.root.ids.tilemap.set_active(args[-1])
 
     def initialize(self, dt):
         # Set tilemap
         self.root.ids.tilemap.set_size(10,10)
-
+        
+        # Isla Petit
         self.root.ids.tilemap.set(Tile(Hex(4,0), Terrain.DESERT))
         self.root.ids.tilemap.set(Tile(Hex(6,0), Terrain.DESERT))
         self.root.ids.tilemap.set(Tile(Hex(8,0), Terrain.MOUNTAIN, Sight.C_TOWN))
@@ -104,6 +111,7 @@ class MainApp(App):
         self.root.ids.tilemap.set(Tile(Hex(13,9), Terrain.WATER))
         self.root.ids.tilemap.set(Tile(Hex(15,9), Terrain.WATER, Sight.SERPENT))
 
+        # Testing paths
         self.root.ids.tilemap.add_path(Path(Hex(4,4), Hex(6,4)))
         self.root.ids.tilemap.add_path(Path(Hex(6,4), Hex(7,5)))
 
