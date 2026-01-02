@@ -5,6 +5,9 @@ from enum import Enum
 from typing import NamedTuple
 import math
 
+# for loading data from files
+import json
+
 # for shuffling cards
 import random
 
@@ -13,6 +16,55 @@ from kivy.clock import Clock
 
 # for displaying tiles
 from kivy.graphics import Color, Ellipse, Line, Rectangle
+from kivy.graphics import Translate, Scale, PushMatrix, PopMatrix
+from kivy.graphics import InstructionGroup
+
+class Entity(object):
+    def __init__(self):
+        # Drawing group
+        self._instructions = InstructionGroup()
+        self._instructions.add(PushMatrix())
+
+        # Translation
+        self._pos = (0, 0)
+        self._translate = Translate(self._pos)
+        self._instructions.add(self._translate)
+
+        # Scaling
+        self._size = (0, 0)
+        self._scale = Scale(self._size, self._size, self._size)
+        self._instructions.add(self._scale)
+        
+        # Other drawing instructions should go here
+        self._instructions.add(PopMatrix())
+        
+    @property
+    def pos(self):
+        return self._pos
+    
+    @pos.setter
+    def pos(self, value):
+        self._pos = value
+        self._translate.x = self._pos[0]
+        self._translate.y = self._pos[1]
+    
+    @property
+    def size(self):
+        return self._size
+    
+    @size.setter
+    def size(self, value):
+        self._size = value
+        self._scale.x = self._size[0]
+        self._scale.y = self._size[1]
+
+    def add_instruction(self, instruction):
+        # Start by removing the closing "pop"
+        self._instructions.remove(self._instructions.children[-1]) # remove last
+        # Add new instruction
+        self._instructions.add(instruction)
+        # Re-add the closing "pop"
+        self._instructions.add(PopMatrix())
 
 class Terrain(Enum):
     DESERT = 0
@@ -118,13 +170,13 @@ class Path():
         self.line.points = [x0, size[1] - y0, x1, size[1] - y1]
         self.line.width = tile_size/30
 
-class Tile():
+class Tile(object):
     files = {
-        Sight.OBELISK: 'assets/obelisk.png',
-        Sight.BOOK: 'assets/book.png',
-        Sight.TOUCAN: 'assets/toucan.png',
-        Sight.YETI: 'assets/yeti.png',
-        Sight.SERPENT: 'assets/serpent.png'
+        Sight.OBELISK: 'assets/graphics/obelisk.png',
+        Sight.BOOK: 'assets/graphics/book.png',
+        Sight.TOUCAN: 'assets/graphics/toucan.png',
+        Sight.YETI: 'assets/graphics/yeti.png',
+        Sight.SERPENT: 'assets/graphics/serpent.png'
     }
 
     terrain_color = {
@@ -138,63 +190,59 @@ class Tile():
         self.coords = coords
         self.terrain = terrain
         self.sight = sight
-        self.active = False
+        self._active = False
 
-    def draw(self, canvas, size, tile_size):
-        with canvas:
-            # Calculate position on canvas
-            (x, y) = self.coords.cartesian(tile_size)
-            y += tile_size
-            y = size[1] - y
+        self._instructions = InstructionGroup()
 
-            # Border
-            if self.active:
-                Color(1, 0, 0, 1)
-            else:
-                Color(0.5, 0.5, 0.5, 1)
-            self.outline = Ellipse(
-                segments = 6,
-                pos = (x, y),
-                size = (tile_size, tile_size)
-            )
+        # Offset based on coordinates
+        (x, y) = self.coords.cartesian()
+        self._instructions.add(PushMatrix())
+        self._instructions.add(Translate(x, y, 0))
 
-            # Set background
-            Color(*self.terrain_color[self.terrain])
+        # Border
+        self._border_color = Color(0.5, 0.5, 0.5, 1)
+        self._instructions.add(self._border_color)
 
-            # Main fill
-            self.fill = Ellipse(
-                segments = 6,
-                pos = (x+2, y+2),
-                size = (tile_size-4, tile_size-4)
-            )
+        self._instructions.add(
+            Ellipse(segments = 6, pos = (0, 0), size = (1, 1))
+        )
 
-            # Icon for sights
-            if self.sight in self.files:
-                Color(1,1,1,1)
-                self.icon = Rectangle(
-                    size = (tile_size/2, tile_size/2),
-                    pos = (x+0.25*tile_size, y+0.25*tile_size),
-                    source = self.files[self.sight]
-                )
-            else:
-                self.icon = None
-    
-    def update(self, size, tile_size):
-        # Calculate position on canvas
-        (x, y) = self.coords.cartesian(tile_size)
-        y += tile_size
-        y = size[1] - y
+        # Main fill
+        self._fill_color = Color(*self.terrain_color[self.terrain])
+        self._instructions.add(self._fill_color)
 
-        self.outline.pos = (x, y)
-        self.outline.size = (tile_size, tile_size)
+        self._instructions.add(
+            Ellipse(segments = 6, pos = (0.02, 0.02), size = (0.96, 0.96))
+        )
 
-        self.fill.pos = (x+1, y+1)
-        self.fill.size = (tile_size-2, tile_size-2)
-
+        # Icon for sights
         if self.sight in self.files:
-            self.icon.size = (tile_size/2, tile_size/2)
-            self.icon.pos = (x+0.25*tile_size, y+0.25*tile_size)
-
+            self._instructions.add(
+                Color(1,1,1,1)
+            )
+            self._instructions.add(
+                Rectangle(pos = (0.25, 0.25), size = (0.5, 0.5), source = self.files[self.sight])
+            )
+        
+        # Cancel offset
+        self._instructions.add(PopMatrix())
+    
+    @property
+    def active(self):
+        return self._active
+    
+    @active.setter
+    def active(self, value: bool):
+        self._active = value
+        if self._active:
+            self._border_color.rgba = (1, 0, 0, 1)
+        else:
+            self._border_color.rgba = (0.5, 0.5, 0.5, 1)
+    
+    @property
+    def instructions(self):
+        return self._instructions
+    
     def __str__(self):
         return f'({self.terrain}, {self.sight if self.sight is not None else " "})'
 
@@ -205,28 +253,44 @@ class Tilemap(RelativeLayout):
         x = int((coords.x - (coords.y%2 == 1)) / 2)
         return NamedTuple('Index', [('x', int), ('y', int)])(x, coords.y)
     
-    def __init__(self, width: int = None, height: int = None, **kwargs):
+    def __init__(self, **kwargs):
         # Keyword arguments are passed to initialize kivy widget
         super().__init__(**kwargs)
 
         self.paths = []
         self.tiles = []
-        self.max_height = 0
-        self.max_width = 0
 
-        self.background = None
+        # Background
+        self._background = Rectangle(pos=(0, 0), size=self.size)
 
-        # If size was provided
-        if (width is not None) and (height is not None):
-            self.set_size(width, height)
-        
+        # Tile scale
+        self._tile_scale = Scale(0,0,0)
+
         # Redraw widget if size changes
-        self.bind(pos=self.update, size=self.update)
+        self.bind(pos=self.update_positions, size=self.update_positions)
+    
+    def load_from_file(self, filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        
+        # Load map size
+        self.set_size(data["width"], data["height"])
+
+        # Load tiles
+        for tile_data in data["tiles"]:
+            x = tile_data["x"]
+            y = tile_data["y"]
+
+            terrain = Terrain[tile_data["terrain"]]
+
+            sight = None
+            if "sight" in tile_data:
+                sight = Sight[tile_data["sight"]]
+
+            tile = Tile(Hex(x, y), terrain, sight)
+            self.set(tile)
     
     def set_size(self, width: int, height: int):
-        self.max_width = width
-        self.max_height = height
-
         for y in range(height):
             self.tiles.append([])
             for x in range(width):
@@ -248,62 +312,61 @@ class Tilemap(RelativeLayout):
         self.paths.append(path)
     
     def set_active(self, mouse_pos):
-        coords = Hex.from_cartesian(mouse_pos[0]-self.tile_size/2, self.height-mouse_pos[1]-self.tile_size/2, self.tile_size)
+        coords = Hex.from_cartesian(mouse_pos[0]-self.tile_size, mouse_pos[1]-self.tile_size/2, self.tile_size)
 
         for row in self.tiles:
             for tile in row:
                 if tile is not None:
                     if tile.active:
                         tile.active = False
-                        tile.draw(self.canvas, self.size, self.tile_size)
-                    
         try:
             self.tiles[coords.y][coords.x].active = True
-            self.tiles[coords.y][coords.x].draw(self.canvas, self.size, self.tile_size)
         except:
             print("Can't activate tile.")
-
-
+    
     
     def draw(self, *args):
-        self.canvas.clear()
+        self.update_positions()
 
-        if (self.max_height is not None and self.max_width is not None):
-            tile_max_width = self.width / (((self.max_width + 1) / 2) * math.sqrt(3)/2)
-            tile_max_height = self.height / (self.max_height * 0.75 + 0.25)
-            self.tile_size = min(tile_max_width, tile_max_height)
-
-        with self.canvas:
-            # Background
-            Color(0.5, 0.5, 0.5, 1)
-            self.background = Rectangle(
-                pos = (0, 0),
-                size = self.size
-            )
-
-            for row in self.tiles:
-                for tile in row:
-                    if tile is not None:
-                        tile.draw(self.canvas, self.size, self.tile_size)
-                        
-            for path in self.paths:
-                path.draw(self.canvas.after, self.size, self.tile_size)
-
-    def update(self, *args):
-        if (self.max_height is not None and self.max_width is not None):
-            tile_max_width = self.width / (((self.max_width + 1) / 2) * math.sqrt(3)/2)
-            tile_max_height = self.height / (self.max_height * 0.75 + 0.25)
-            self.tile_size = min(tile_max_width, tile_max_height)
+        # Background
+        self.canvas.before.add(Color(0.5, 0.5, 0.5, 1))
+        self.canvas.before.add(self._background)
         
-        if self.background is not None:
-            self.background.pos = (0, 0)
-            self.background.size = self.size
+        # Set size
+        self.canvas.add(PushMatrix())
+        self.canvas.add(self._tile_scale)
 
+        # Draw tiles
         for row in self.tiles:
             for tile in row:
                 if tile is not None:
-                    tile.update(self.size, self.tile_size)
+                    self.canvas.add(tile._instructions)
         
-        for path in self.paths:
-            path.update(self.size, self.tile_size)
+        self.canvas.add(PopMatrix())
+
+        # Draw paths           
+        #for path in self.paths:
+        #    path.draw(self.canvas.after, self.size, self.tile_size)
+
+    def update_positions(self, *args):
+        try:
+            rows = len(self.tiles)
+            cols = len(self.tiles[0])
+        except:
+            print("Can't update positions.")
+            return
+
+        max_tile_width = self.width / (((cols + 1) / 2) * math.sqrt(3)/2)
+        max_tile_height = self.height / (rows * 0.75 + 0.25)
+
+        self.tile_size = min(max_tile_width, max_tile_height)
+        
+        self._tile_scale.x = self.tile_size
+        self._tile_scale.y = self.tile_size
+
+        # Update background
+        self._background.size = self.size
+        
+        #for path in self.paths:
+        #    path.update(self.size, self.tile_size)
     
