@@ -1,8 +1,11 @@
 # widget class
 from kivy.uix.relativelayout import RelativeLayout
 
+# for compact data types
 from enum import Enum
-from typing import NamedTuple
+from dataclasses import dataclass
+
+# ...for math...duh
 import math
 
 # for loading data from files
@@ -103,19 +106,17 @@ class Deck():
 
 
 # Double-width horizontal layout: doubles horizontal coordinate
-class Hex(NamedTuple):
+@dataclass(frozen=True, slots=True)
+class Hex:
     x: int
     y: int
 
     @staticmethod
-    def from_cartesian(x, y, size) -> 'Hex':
+    def from_cartesian(x: float, y: float, size:float) -> 'Hex':
         return Hex(
-            round(x / math.sqrt(3) / (size/2)),  # x
+            round(x / (math.sqrt(3)/2) / (size/2)),  # x
             round(y * 2/3 / (size/2))  # y
         )
-
-    def __str__(self):
-        return f'({self.x}, {self.y})'
     
     def distance(self, other: 'Hex') -> int:
         dx = abs(self.x - other.x)
@@ -123,55 +124,34 @@ class Hex(NamedTuple):
         return dy + max(0, (dx-dy)/2)
     
     def neighbors(self) -> list['Hex']:
+        x, y = self.x, self.y
         return [
-            Hex(self.x + 2, self.y + 0),
-            Hex(self.x + 1, self.y - 1),
-            Hex(self.x - 1, self.y - 1),
-            Hex(self.x - 2, self.y + 0),
-            Hex(self.x - 1, self.y + 1),
-            Hex(self.x + 1, self.y + 1)
+            Hex(x+2, y  ),
+            Hex(x+1, y-1),
+            Hex(x-1, y-1),
+            Hex(x-2, y  ),
+            Hex(x-1, y+1),
+            Hex(x+1, y+1),
         ]
     
-    def cartesian(self, size: float = 1.0):
+    def cartesian(self, size: float = 1.0) -> tuple[float, float]:
         return (
             self.x * math.sqrt(3)/2 * (size/2), # x
             self.y * 3/2 * (size/2) # y
         )
 
-class Path():
-    def __init__(self, start: Hex, end: Hex):
-        self.start = start
-        self.end = end
+class Tile():
+    def __init__(self, coords: Hex, terrain: Terrain, sight: Sight = None):
+        self.coords = coords
+        self.terrain = terrain
+        self.sight = sight
+        self.active = False
     
-    def draw(self, canvas, size, tile_size):
-        (x0, y0) = self.start.cartesian(tile_size)
-        (x1, y1) = self.end.cartesian(tile_size)
+    def __repr__(self):
+        return f"Tile({self.coords}, {self.terrain}, {self.sight})"
 
-        y0 += 0.5*tile_size
-        y1 += 0.5*tile_size
-
-        x0 += 0.5*math.sqrt(3)/2*tile_size
-        x1 += 0.5*math.sqrt(3)/2*tile_size
-
-        with canvas:
-            Color(0, 0, 0, 1)
-            self.line = Line(points=[x0, size[1] - y0, x1, size[1] - y1], width=tile_size/30)
-    
-    def update(self, size, tile_size):
-        (x0, y0) = self.start.cartesian(tile_size)
-        (x1, y1) = self.end.cartesian(tile_size)
-
-        y0 += 0.5*tile_size
-        y1 += 0.5*tile_size
-
-        x0 += 0.5*math.sqrt(3)/2*tile_size
-        x1 += 0.5*math.sqrt(3)/2*tile_size
-
-        self.line.points = [x0, size[1] - y0, x1, size[1] - y1]
-        self.line.width = tile_size/30
-
-class Tile(object):
-    files = {
+class TileView():
+    ICON_FILES = {
         Sight.OBELISK: 'assets/graphics/obelisk.png',
         Sight.BOOK: 'assets/graphics/book.png',
         Sight.TOUCAN: 'assets/graphics/toucan.png',
@@ -179,194 +159,209 @@ class Tile(object):
         Sight.SERPENT: 'assets/graphics/serpent.png'
     }
 
-    terrain_color = {
+    TERRAIN_COLORS = {
         Terrain.DESERT: (1, 1, 0.8, 1),
         Terrain.FOREST: (0.8, 1, 0.8, 1),
         Terrain.MOUNTAIN: (0.8, 0.8, 0.8, 1),
         Terrain.WATER: (0.6, 0.8, 1.0, 1)
     }
 
-    def __init__(self, coords: Hex, terrain: Terrain = None, sight: Sight = None):
-        self.coords = coords
-        self.terrain = terrain
-        self.sight = sight
-        self._active = False
+    BORDER_INACTIVE = (0.5, 0.5, 0.5, 1)
+    BORDER_ACTIVE = (1, 0, 0, 1)
 
-        self._instructions = InstructionGroup()
+    def __init__(self, tile: Tile):
+        self.tile = tile
+        self.instructions = InstructionGroup()
 
         # Offset based on coordinates
-        (x, y) = self.coords.cartesian()
-        self._instructions.add(PushMatrix())
-        self._instructions.add(Translate(x, y, 0))
+        x, y = self.tile.coords.cartesian()
+        self.instructions.add(PushMatrix())
+        self.instructions.add(Translate(x, y, 0))
 
         # Border
-        self._border_color = Color(0.5, 0.5, 0.5, 1)
-        self._instructions.add(self._border_color)
+        self._border_color = Color(*self.BORDER_INACTIVE)
+        self.instructions.add(self._border_color)
 
-        self._instructions.add(
-            Ellipse(segments = 6, pos = (0, 0), size = (1, 1))
+        self.instructions.add(Ellipse(
+            segments = 6,
+            pos = (0, 0),
+            size = (1, 1))
         )
 
         # Main fill
-        self._fill_color = Color(*self.terrain_color[self.terrain])
-        self._instructions.add(self._fill_color)
+        self._fill_color = Color(*self.TERRAIN_COLORS[self.tile.terrain])
+        self.instructions.add(self._fill_color)
 
-        self._instructions.add(
-            Ellipse(segments = 6, pos = (0.02, 0.02), size = (0.96, 0.96))
+        self.instructions.add(Ellipse(
+            segments = 6,
+            pos = (0.02, 0.02),
+            size = (0.96, 0.96))
         )
 
         # Icon for sights
-        if self.sight in self.files:
-            self._instructions.add(
-                Color(1,1,1,1)
-            )
-            self._instructions.add(
-                Rectangle(pos = (0.25, 0.25), size = (0.5, 0.5), source = self.files[self.sight])
+        if self.tile.sight in self.ICON_FILES:
+            self.instructions.add(Color(1,1,1,1))
+            self.instructions.add(Rectangle(
+                pos = (0.25, 0.25),
+                size = (0.5, 0.5),
+                source = self.ICON_FILES[self.tile.sight])
             )
         
         # Cancel offset
-        self._instructions.add(PopMatrix())
+        self.instructions.add(PopMatrix())
     
-    @property
-    def active(self):
-        return self._active
-    
-    @active.setter
-    def active(self, value: bool):
-        self._active = value
-        if self._active:
-            self._border_color.rgba = (1, 0, 0, 1)
+    def update(self):
+        if self.tile.active:
+            self._border_color.rgba = self.BORDER_ACTIVE
         else:
-            self._border_color.rgba = (0.5, 0.5, 0.5, 1)
-    
-    @property
-    def instructions(self):
-        return self._instructions
-    
-    def __str__(self):
-        return f'({self.terrain}, {self.sight if self.sight is not None else " "})'
+            self._border_color.rgba = self.BORDER_INACTIVE
 
+class TileGrid:
+    def __init__(self):
+        self.width = 0
+        self.height = 0
+        self._tiles: dict[Hex, Tile] = {}
+    
+    def get(self, index: Hex):
+        return self._tiles.get(index)
+
+    def set(self, tile: Tile):
+        self._tiles[tile.coords] = tile
+        if tile.coords.x >= self.width:
+            self.width = tile.coords.x + 1
+        
+        if tile.coords.y >= self.height:
+            self.height = tile.coords.y + 1
+    
+    def __iter__(self):
+        return iter(self._tiles.values())
+
+@dataclass(frozen=True)
+class Path():
+    start: Hex
+    end: Hex
+
+class PathView():
+    LINE_COLOR = (0, 0, 0.2, 1)
+
+    def __init__(self, path: Path):
+        self.path = path
+
+        self.instructions = InstructionGroup()
+
+        # Border
+        self.instructions.add(Color(*self.LINE_COLOR))
+
+        (x0, y0) = self.path.start.cartesian()
+        x0 += 0.5*math.sqrt(3)/2
+        y0 += 0.5
+
+        (x1, y1) = self.path.end.cartesian()
+        x1 += 0.5*math.sqrt(3)/2
+        y1 += 0.5
+
+        self.instructions.add(Line(
+            points =[x0, y0, x1, y1],
+            width = 0.03)
+        )
+
+def load_from_file(filename: str) -> TileGrid:
+        grid = TileGrid()
+
+        with open(filename, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        for entry in data["tiles"]:
+            tile = Tile(
+                coords = Hex(entry["x"], entry["y"]),
+                terrain = Terrain[entry["terrain"]],
+                sight = Sight[entry["sight"]] if "sight" in entry else None
+            )
+
+            grid.set(tile)
+        
+        return grid
 
 class Tilemap(RelativeLayout):
-    @staticmethod
-    def storage_index(coords: Hex):
-        x = int((coords.x - (coords.y%2 == 1)) / 2)
-        return NamedTuple('Index', [('x', int), ('y', int)])(x, coords.y)
-    
-    def __init__(self, **kwargs):
+    def __init__(self, grid: TileGrid, **kwargs):
         # Keyword arguments are passed to initialize kivy widget
         super().__init__(**kwargs)
 
+        # Tiles
+        self.grid = grid
+        self.tile_views: dict[Tile, TileView] = {}
+        # Populate views
+        for tile in self.grid:
+            view = TileView(tile)
+            self.tile_views[tile] = view
+        
+        # Paths
         self.paths = []
-        self.tiles = []
+        self.path_views: dict[Path, PathView] = {}
 
         # Background
         self._background = Rectangle(pos=(0, 0), size=self.size)
-
+        
         # Tile scale
-        self._tile_scale = Scale(0,0,0)
+        self.tile_size = 0
+        self._tile_scale = Scale(self.tile_size, self.tile_size, self.tile_size)
 
         # Redraw widget if size changes
         self.bind(pos=self.update_positions, size=self.update_positions)
-    
-    def load_from_file(self, filename):
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        
-        # Load map size
-        self.set_size(data["width"], data["height"])
 
-        # Load tiles
-        for tile_data in data["tiles"]:
-            x = tile_data["x"]
-            y = tile_data["y"]
-
-            terrain = Terrain[tile_data["terrain"]]
-
-            sight = None
-            if "sight" in tile_data:
-                sight = Sight[tile_data["sight"]]
-
-            tile = Tile(Hex(x, y), terrain, sight)
-            self.set(tile)
-    
-    def set_size(self, width: int, height: int):
-        for y in range(height):
-            self.tiles.append([])
-            for x in range(width):
-                tile = None
-                self.tiles[y].append(tile)
-    
-    def set(self, tile: Tile):
-        try:
-            index = self.storage_index(tile.coords)
-            self.tiles[index.y][index.x] = tile
-
-            # Update graphics
-            Clock.schedule_once(self.draw, 0)
-
-        except:
-            print(f"Can't set tile at ({tile.coords.x}, {tile.coords.y})")
+        # Draw tilemap
+        Clock.schedule_once(self.draw)
 
     def add_path(self, path: Path):
         self.paths.append(path)
+        self.path_views[path] = PathView(path)
     
     def set_active(self, mouse_pos):
-        coords = Hex.from_cartesian(mouse_pos[0]-self.tile_size, mouse_pos[1]-self.tile_size/2, self.tile_size)
+        coords = Hex.from_cartesian(
+            mouse_pos[0]-self.tile_size/2, # x
+            mouse_pos[1]-self.tile_size/2, # y
+            self.tile_size
+        )
 
-        for row in self.tiles:
-            for tile in row:
-                if tile is not None:
-                    if tile.active:
-                        tile.active = False
-        try:
-            self.tiles[coords.y][coords.x].active = True
-        except:
-            print("Can't activate tile.")
-    
+        # Activate the one tile at coords, deactivate all other
+        for tile in self.grid:
+            tile.active = (tile.coords.x == coords.x and tile.coords.y == coords.y)
+            self.tile_views[tile].update()
     
     def draw(self, *args):
-        self.update_positions()
-
         # Background
         self.canvas.before.add(Color(0.5, 0.5, 0.5, 1))
         self.canvas.before.add(self._background)
-        
+
+        # Update position and size
+        self.update_positions()
+
         # Set size
         self.canvas.add(PushMatrix())
         self.canvas.add(self._tile_scale)
-
-        # Draw tiles
-        for row in self.tiles:
-            for tile in row:
-                if tile is not None:
-                    self.canvas.add(tile._instructions)
         
+        # Draw tiles
+        for tile in self.grid:
+            self.canvas.add(self.tile_views[tile].instructions)
+
+        # Draw paths
+        for path in self.paths:
+            self.canvas.add(self.path_views[path].instructions)
+        
+        # Restore size
         self.canvas.add(PopMatrix())
 
-        # Draw paths           
-        #for path in self.paths:
-        #    path.draw(self.canvas.after, self.size, self.tile_size)
-
     def update_positions(self, *args):
-        try:
-            rows = len(self.tiles)
-            cols = len(self.tiles[0])
-        except:
-            print("Can't update positions.")
-            return
-
-        max_tile_width = self.width / (((cols + 1) / 2) * math.sqrt(3)/2)
-        max_tile_height = self.height / (rows * 0.75 + 0.25)
-
+        # Calculate tile size:
+        # Keep aspect and fit whole grid
+        max_tile_width = self.width / (((self.grid.width + 0.5) / 2) * math.sqrt(3)/2)
+        max_tile_height = self.height / (self.grid.height * 0.75 + 0.25)
         self.tile_size = min(max_tile_width, max_tile_height)
         
+        # Update size
         self._tile_scale.x = self.tile_size
         self._tile_scale.y = self.tile_size
 
         # Update background
         self._background.size = self.size
-        
-        #for path in self.paths:
-        #    path.update(self.size, self.tile_size)
     

@@ -3,7 +3,7 @@ from kivy.lang.builder import Builder
 from kivy.core.window import Window
 from kivy.clock import Clock
 
-from components.tilemap.tilemap import Hex, Terrain, Sight, Tile, Path, Tilemap
+from components.tilemap.tilemap import load_from_file, Hex, Path, Tilemap
 
 class MainApp(App):
     def build(self):
@@ -25,16 +25,22 @@ class MainApp(App):
     
     def update_mouse_pos(self, *args):
         self.mouse_pos = args[-1]
-        self.root.ids.tilemap.set_active(self.mouse_pos)
+        self.tilemap.set_active(self.mouse_pos)
 
     def initialize(self, dt):
-        # Set tilemap
-        self.root.ids.tilemap.load_from_file("assets/maps/isla_petit.json")
+        # Load the grid
+        grid = load_from_file("assets/maps/isla_petit.json")
+
+        # Create Tilemap widget
+        self.tilemap = Tilemap(grid=grid)
+        
+        # Add Tilemap to the layout
+        self.root.add_widget(self.tilemap)
 
         # Testing paths
-        self.root.ids.tilemap.add_path(Path(Hex(4,4), Hex(6,4)))
-        self.root.ids.tilemap.add_path(Path(Hex(6,4), Hex(7,5)))
-
+        self.tilemap.add_path(Path(Hex(4,4), Hex(6,4)))
+        self.tilemap.add_path(Path(Hex(6,4), Hex(7,5)))
+        
         # Setup framerate (60)
         self.register_event_type("on_frame")
         Clock.schedule_interval(self._on_frame, 1/60)

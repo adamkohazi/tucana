@@ -84,9 +84,6 @@
     { "x": 8,  "y": 0, "terrain": "DESERT" },
     { "x": 10, "y": 0, "terrain": "FOREST", "sight": "A_TOWN" },
     { "x": 14, "y": 0, "terrain": "WATER" },
-    { "x": 16, "y": 0, "terrain": "WATER", "sight": "SERPENT" },
-
-    { "x": 0,  "y": 0, "terrain": "DESERT" },
-    { "x": 19,  "y": 9, "terrain": "DESERT" }
+    { "x": 16, "y": 0, "terrain": "WATER", "sight": "SERPENT" }
   ]
 }
